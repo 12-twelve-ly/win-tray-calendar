@@ -732,23 +732,70 @@ function Show-NextReminder {
 
     $f = New-Object System.Windows.Forms.Form
     $f.Text = 'TrayCal 提醒'
-    $f.ClientSize = New-Object System.Drawing.Size(380, 120)
-    $f.FormBorderStyle = 'FixedToolWindow'
+    $f.ClientSize = New-Object System.Drawing.Size(400, 150)
+    $f.FormBorderStyle = 'None'
+    $f.BackColor = [System.Drawing.Color]::White
     $f.TopMost = $true
     $f.ShowInTaskbar = $false
+    $f.StartPosition = 'Manual'
     $f.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "⏰ $($ev.time)  $($ev.title)"
-    $lbl.Location = New-Object System.Drawing.Point(16, 18)
-    $lbl.AutoSize = $true
+    $lblTime = New-Object System.Windows.Forms.Label
+    $lblTime.Text = "⏰ $($ev.time)"
+    $lblTime.Location = New-Object System.Drawing.Point(20, 16)
+    $lblTime.AutoSize = $true
+    $lblTime.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 11, [System.Drawing.FontStyle]::Bold)
+    $lblTime.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = $ev.title
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 48)
+    $lblTitle.Size = New-Object System.Drawing.Size(360, 26)
+    $lblTitle.AutoEllipsis = $true
+    $lblTitle.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+    $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(45, 45, 55)
+
     $btnOk = New-Object System.Windows.Forms.Button
-    $btnOk.Text = '知道了'; $btnOk.Location = New-Object System.Drawing.Point(80, 60); $btnOk.Size = New-Object System.Drawing.Size(90, 30)
+    $btnOk.Text = '知道了'
+    $btnOk.Size = New-Object System.Drawing.Size(90, 32)
+    $btnOk.Location = New-Object System.Drawing.Point(($f.ClientSize.Width - 20 - 110 - 10 - 90), ($f.ClientSize.Height - 20 - 32))
     $btnOk.Tag = $ev
     $btnSnooze = New-Object System.Windows.Forms.Button
-    $btnSnooze.Text = '稍后10分钟'; $btnSnooze.Location = New-Object System.Drawing.Point(190, 60); $btnSnooze.Size = New-Object System.Drawing.Size(110, 30)
+    $btnSnooze.Text = '稍后10分钟'
+    $btnSnooze.Size = New-Object System.Drawing.Size(110, 32)
+    $btnSnooze.Location = New-Object System.Drawing.Point(($f.ClientSize.Width - 20 - 110), ($f.ClientSize.Height - 20 - 32))
     $btnSnooze.Tag = $ev
-    $f.Controls.AddRange(@($lbl, $btnOk, $btnSnooze))
+    $f.Controls.AddRange(@($lblTime, $lblTitle, $btnOk, $btnSnooze))
+
+    # 圆角卡片 + 1px 描边，与主面板同风格
+    $rmR = 16
+    $rmPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $rmRc = $f.ClientRectangle
+    $rmPath.AddArc($rmRc.X, $rmRc.Y, $rmR, $rmR, 180, 90)
+    $rmPath.AddArc($rmRc.Right - $rmR, $rmRc.Y, $rmR, $rmR, 270, 90)
+    $rmPath.AddArc($rmRc.Right - $rmR, $rmRc.Bottom - $rmR, $rmR, $rmR, 0, 90)
+    $rmPath.AddArc($rmRc.X, $rmRc.Bottom - $rmR, $rmR, $rmR, 90, 90)
+    $rmPath.CloseFigure()
+    $f.Region = New-Object System.Drawing.Region($rmPath)
+    $rmPath.Dispose()
+    $f.Add_Paint({
+        param($sender, $e)
+        $rmPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 210, 216), 1)
+        $rmC = $sender.ClientRectangle
+        $e.Graphics.DrawRectangle($rmPen, $rmC.X, $rmC.Y, ($rmC.Width - 1), ($rmC.Height - 1))
+        $rmPen.Dispose()
+    })
+
+    $btnOk.FlatStyle = 'Flat'
+    $btnOk.FlatAppearance.BorderSize = 0
+    $btnOk.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
+    $btnOk.ForeColor = [System.Drawing.Color]::White
+    $btnOk.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(0, 104, 188)
+    $btnSnooze.FlatStyle = 'Flat'
+    $btnSnooze.BackColor = [System.Drawing.Color]::White
+    $btnSnooze.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 68)
+    $btnSnooze.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(210, 210, 218)
+    $btnSnooze.FlatAppearance.BorderSize = 1
+    $btnSnooze.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(240, 243, 247)
 
     $btnOk.Add_Click({
         param($sender, $e)
