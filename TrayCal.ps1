@@ -3,6 +3,7 @@
 param(
     [switch]$SelfTest,
     [switch]$Show,       # 启动后自动弹出面板（用于截图自检/演示）
+    [switch]$Demo,       # 截图自检：连"添加日程"对话框也自动打开
     [switch]$KeepOpen    # 调试：失去焦点不自动收起（配合截图用）
 )
 
@@ -128,6 +129,13 @@ if (-not $mutex.WaitOne(0)) {
     exit 0
 }
 [System.Windows.Forms.Application]::EnableVisualStyles()
+# 全局 UI 异常兜底：记日志并友好提示，不再弹 .NET 崩溃窗
+[System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+[System.Windows.Forms.Application]::add_ThreadException({
+    param($s, $e)
+    Write-Log "UI异常: $($e.Exception.ToString())"
+    [System.Windows.Forms.MessageBox]::Show("界面操作出现异常（已写入日志）：`n$($e.Exception.Message)", 'TrayCal', 'OK', 'Warning') | Out-Null
+})
 
 # ---------- 运行状态 ----------
 $script:events = @()
@@ -356,7 +364,7 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
 
         $lblD = New-Object System.Windows.Forms.Label; $lblD.Text = '日期'; $lblD.Location = '14,49'; $lblD.AutoSize = $true
         $dtpD = New-Object System.Windows.Forms.DateTimePicker
-        $dtpD.Location = '70,46'; $dtpD.Width = 150; $dtpD.Format = 'ShortDate'
+        $dtpD.Location = '70,46'; $dtpD.Width = 150; $dtpD.Format = 'Short'
         if ($isNew) { $dtpD.Value = $DefaultDate.Date }
         else { $dtpD.Value = [DateTime]::ParseExact($Existing.date, 'yyyy-MM-dd', $null) }
 
@@ -476,11 +484,17 @@ $ni.Add_MouseClick({
 
 Write-Log 'TrayCal M2 启动'
 
-if ($Show) {
+if ($Show -or $Demo) {
     $tShow = New-Object System.Windows.Forms.Timer
     $tShow.Interval = 600
     $tShow.Add_Tick({ $tShow.Stop(); $tShow.Dispose(); Show-Panel })
     $tShow.Start()
+}
+if ($Demo) {
+    $tDemo = New-Object System.Windows.Forms.Timer
+    $tDemo.Interval = 1500
+    $tDemo.Add_Tick({ $tDemo.Stop(); $tDemo.Dispose(); Show-EditDialog $null $script:selectedDate })
+    $tDemo.Start()
 }
 
 $ctx = New-Object System.Windows.Forms.ApplicationContext
