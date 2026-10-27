@@ -1,4 +1,4 @@
-# TrayCal —— Windows 右下角托盘日程日历
+﻿# TrayCal —— Windows 右下角托盘日程日历
 
 点任务栏右下角的托盘图标 → 弹出月历 → 直接添加/编辑/删除日程 → 到点右下角弹提醒。
 **纯本地、零账号、零安装、离线可用**——不连任何云服务，不依赖 Outlook。
@@ -12,7 +12,7 @@ TrayCal 把手机日历"点一下记日程"的体验搬回桌面，体积小到�
 
 ```
 1. clone 或下载本仓库任意目录
-2. 双击 启动TrayCal.vbs（无黑窗；或直接右键 TrayCal.ps1 → 使用 PowerShell 运行）
+2. 双击 src\启动TrayCal.vbs（无黑窗；或右键 src\TrayCal.ps1 → 使用 PowerShell 运行）
 3. 托盘出现日历图标 → 左键单击弹出面板
 ```
 
@@ -60,15 +60,15 @@ TrayCal 把手机日历"点一下记日程"的体验搬回桌面，体积小到�
 ## 开发自测
 
 ```
-powershell -File TrayCal.ps1 -SelfTest       # 数据层断言（含周计算/复制逻辑）
-powershell -File TrayCal.ps1 -Show           # 启动并自动弹出面板（截图/演示用）
-powershell -File TrayCal.ps1 -Demo           # 连添加对话框一起弹出
-powershell -File TrayCal.ps1 -DemoReminder   # 弹一条测试提醒
-powershell -File TrayCal.ps1 -DemoCalMonth   # 月历初始为"月选择"视图
-powershell -File TrayCal.ps1 -DemoCalYear    # 月历初始为"年选择"视图
+powershell -File src\TrayCal.ps1 -SelfTest       # 数据层断言（含周/复制/批量逻辑）
+powershell -File src\TrayCal.ps1 -Show           # 启动并自动弹出面板（截图/演示用）
+powershell -File src\TrayCal.ps1 -Demo           # 连添加对话框一起弹出
+powershell -File src\TrayCal.ps1 -DemoReminder   # 弹一条测试提醒
+powershell -File src\TrayCal.ps1 -DemoCalMonth   # 月历初始为"月选择"视图
+powershell -File src\TrayCal.ps1 -DemoCalYear    # 月历初始为"年选择"视图
 ```
 
-界面异常不会弹 .NET 崩溃窗：统一兜底写日志到 `data/traycal.log`。
+界面异常不会弹 .NET 崩溃窗：统一兜底写日志到 `src/data/traycal.log`。
 
 ## 已知边界（v1）
 
@@ -80,10 +80,15 @@ powershell -File TrayCal.ps1 -DemoCalYear    # 月历初始为"年选择"视图
 
 | 文件 | 作用 |
 |------|------|
-| TrayCal.ps1 | 主程序（单文件） |
-| 启动TrayCal.vbs | 静默启动器（无控制台窗口） |
-| 需求文档.md / 开发方案.md | 需求 F1~F12/N1~N8 与技术方案、里程碑 |
-| assets/note.png | 托盘图标素材 |
+| src/TrayCal.ps1 | 入口：参数、单实例、模块加载、托盘与消息循环 |
+| src/lib/data.ps1 | 数据层：读写、复制/覆盖、批量生成（纯函数） |
+| src/lib/ui-panel.ps1 | 主面板与自绘月历（三视图/拖选/滚轮） |
+| src/lib/ui-dialogs.ps1 | 添加编辑、批量添加、批量删除对话框 |
+| src/lib/ui-reminder.ps1 | 提醒窗与定时扫描 |
+| src/tests/SelfTest.ps1 | 数据层自测（-SelfTest 触发） |
+| src/启动TrayCal.vbs | 静默启动器（无控制台窗口） |
+| src/assets/note.png | 托盘图标素材 |
+| 需求文档.md / 开发方案.md | 需求与技术方案 |
 
 ## License
 
