@@ -239,7 +239,7 @@ $panel.StartPosition = 'Manual'
 $panel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 
 $mc = New-Object System.Windows.Forms.MonthCalendar
-$mc.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 11)
+$mc.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 13)
 $mc.FirstDayOfWeek = [System.Windows.Forms.Day]::Monday
 $mc.ShowTodayCircle = $true
 $panel.Controls.Add($mc) | Out-Null
@@ -280,7 +280,7 @@ $btnCopyWeek.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 8)
 $panel.Controls.AddRange(@($btnAdd, $btnEdit, $btnDel, $btnCopyWeek))
 
 # 布局与圆角：控件句柄创建后月历真实尺寸才准，弹出时再校准
-$pad = 14
+$pad = 16
 $radius = 18
 
 function Set-CardRegion {
@@ -305,7 +305,7 @@ function Sync-PanelSize {
     $w = [Math]::Max($mc.Width, $needW)
     $h = $mc.Height
     $mc.Size = New-Object System.Drawing.Size($w, $h)
-    $lvH = 132
+    $lvH = 120
     $btnH = 32
     $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + 34 + $lvH + 6 + $btnH + $pad))
     $mc.Location = New-Object System.Drawing.Point($pad, $pad)
