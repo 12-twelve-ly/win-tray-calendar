@@ -232,6 +232,22 @@ function New-TrayIcon {
     return $icon
 }
 
+# ---------- 通用：窗体圆角（尺寸变化后重算，避免自动缩放错位） ----------
+function Set-RoundedForm($form, [int]$r) {
+    $rc = $form.ClientRectangle
+    if ($rc.Width -le 0 -or $rc.Height -le 0) { return }
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $p.AddArc($rc.X, $rc.Y, $r, $r, 180, 90)
+    $p.AddArc(($rc.Right - $r), $rc.Y, $r, $r, 270, 90)
+    $p.AddArc(($rc.Right - $r), ($rc.Bottom - $r), $r, $r, 0, 90)
+    $p.AddArc($rc.X, ($rc.Bottom - $r), $r, $r, 90, 90)
+    $p.CloseFigure()
+    $old = $form.Region
+    $form.Region = New-Object System.Drawing.Region($p)
+    $p.Dispose()
+    if ($old) { $old.Dispose() }
+}
+
 # ---------- 弹出面板控件 ----------
 $panel = New-Object System.Windows.Forms.Form
 $panel.FormBorderStyle = 'None'
@@ -241,7 +257,7 @@ $panel.ShowInTaskbar = $false
 $panel.ShowIcon = $false
 $panel.TopMost = $true
 $panel.StartPosition = 'Manual'
-$panel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+$panel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
 # 自绘月历（原生 MonthCalendar 尺寸受系统限制，无法填满卡片）
 $script:calW = 336
@@ -253,14 +269,8 @@ try {
 } catch { }
 $panel.Controls.Add($calPanel) | Out-Null
 
-$lblSel = New-Object System.Windows.Forms.Label
-$lblSel.AutoSize = $false
-$lblSel.Height = 20
-$lblSel.AutoEllipsis = $true
-$lblSel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5, [System.Drawing.FontStyle]::Bold)
-$lblSel.ForeColor = [System.Drawing.Color]::FromArgb(40, 40, 52)
-$lblSel.ForeColor = [System.Drawing.Color]::FromArgb(60, 60, 70)
-$panel.Controls.Add($lblSel) | Out-Null
+# 日期标题不再用 Label，而是在面板 Paint 中用 GDI+ 直绘（与日历数字同渲染路径，不发虚）
+$script:selText = ''
 
 $lv = New-Object System.Windows.Forms.ListView
 $lv.View = 'Details'
@@ -279,36 +289,61 @@ $lv.Columns.Add('时间', 58) | Out-Null
 $lv.Columns.Add('日程', 292) | Out-Null
 $panel.Controls.Add($lv) | Out-Null
 
-function New-PanelButton($text, $accent) {
+function New-TextButton($caption, [bool]$accent, [int]$w = 84, [int]$h = 30, [int]$size = 10) {
+    # 自绘按钮：文字用 GDI+ ClearType 渲染，避免原生按钮文字发虚
     $b = New-Object System.Windows.Forms.Button
-    $b.Text = $text
-    $b.Size = New-Object System.Drawing.Size(72, 30)
+    $b.Text = ''
     $b.FlatStyle = 'Flat'
-    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $b.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
-    if ($accent) {
-        $b.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
-        $b.ForeColor = [System.Drawing.Color]::White
-        $b.FlatAppearance.BorderSize = 0
-        $b.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(0, 104, 188)
-    } else {
-        $b.BackColor = [System.Drawing.Color]::White
-        $b.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 68)
-        $b.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(210, 210, 218)
-        $b.FlatAppearance.BorderSize = 1
-        $b.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(240, 243, 247)
-    }
+    $b.FlatAppearance.BorderSize = 0
+    $b.Size = New-Object System.Drawing.Size($w, $h)
+    $b.BackColor = $(if ($accent) { [System.Drawing.Color]::FromArgb(0, 120, 215) } else { [System.Drawing.Color]::White })
+    $b.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', $size)
+    $b | Add-Member -NotePropertyName Caption -NotePropertyValue $caption -Force
+    $b | Add-Member -NotePropertyName Accent -NotePropertyValue $accent -Force
+    $b.Add_MouseEnter({
+        param($s, $e)
+        if (-not $s.Enabled) { return }
+        $s.BackColor = $(if ($s.Accent) { [System.Drawing.Color]::FromArgb(0, 104, 188) } else { [System.Drawing.Color]::FromArgb(240, 243, 247) })
+    })
+    $b.Add_MouseLeave({
+        param($s, $e)
+        $s.BackColor = $(if ($s.Accent) { [System.Drawing.Color]::FromArgb(0, 120, 215) } else { [System.Drawing.Color]::White })
+    })
+    $b.Add_Paint({
+        param($sender, $e)
+        $g = $e.Graphics
+        $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+        $rc = $sender.ClientRectangle
+        $isLink = ($sender.PSObject.Properties['Style'] -and $sender.Style -eq 'link')
+        if (-not $sender.Enabled) { $fgc = [System.Drawing.Color]::FromArgb(170, 170, 176) }
+        elseif ($isLink) { $fgc = [System.Drawing.Color]::FromArgb(0, 110, 200) }
+        elseif ($sender.Accent) { $fgc = [System.Drawing.Color]::White }
+        else { $fgc = [System.Drawing.Color]::FromArgb(45, 45, 55) }
+        if (-not $sender.Accent -and -not $isLink) {
+            $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 210, 218), 1)
+            $g.DrawRectangle($pen, $rc.X, $rc.Y, ($rc.Width - 1), ($rc.Height - 1))
+            $pen.Dispose()
+        }
+        $sf = New-Object System.Drawing.StringFormat
+        $sf.Alignment = [System.Drawing.StringAlignment]::Center
+        $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+        $br = New-Object System.Drawing.SolidBrush($fgc)
+        $g.DrawString($sender.Caption, $sender.Font, $br, (New-Object System.Drawing.RectangleF(0, 0, $rc.Width, $rc.Height)), $sf)
+        $br.Dispose(); $sf.Dispose()
+    })
     return $b
+}
+
+function New-PanelButton($text, $accent) {
+    return New-TextButton $text ([bool]$accent) 72 30 10
 }
 $btnAdd = New-PanelButton '添加日程' $true
 $btnEdit = New-PanelButton '编辑' $false
 $btnDel = New-PanelButton '删除' $false
 $btnCopyWeek = New-PanelButton '复制本周→下周' $false
-$btnCopyWeek.Size = New-Object System.Drawing.Size(120, 24)
-$btnCopyWeek.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 8)
-$btnCopyWeek.FlatAppearance.BorderSize = 0
-$btnCopyWeek.ForeColor = [System.Drawing.Color]::FromArgb(0, 110, 200)
-$btnCopyWeek.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(236, 243, 252)
+$btnCopyWeek.Size = New-Object System.Drawing.Size(128, 24)
+$btnCopyWeek.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+$btnCopyWeek | Add-Member -NotePropertyName Style -NotePropertyValue 'link' -Force
 $panel.Controls.AddRange(@($btnAdd, $btnEdit, $btnDel, $btnCopyWeek))
 
 # 布局与圆角：控件句柄创建后月历真实尺寸才准，弹出时再校准
@@ -334,13 +369,11 @@ function Sync-PanelSize {
     $h = $script:calH
     $lvH = 120
     $btnH = 32
-    $rowH = 26          # 日期行（复制按钮高 24）
+    $rowH = 38          # 日期行（上间距加大）
     $gap  = 12          # 列表与按钮行的间距
     $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + $rowH + $lvH + $gap + $btnH + $pad))
     $calPanel.Location = New-Object System.Drawing.Point($pad, $pad)
-    $lblSel.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 7))
-    $lblSel.Width = [Math]::Max(80, ($w - 128))
-    $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 120), ($pad + $h + 3))
+    $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 128), ($pad + $h + 10))
     $lv.Location = New-Object System.Drawing.Point($pad, ($pad + $h + $rowH + 2))
     $lv.Size = New-Object System.Drawing.Size($w, $lvH)
     # 列宽自适应，不产生横向滚动条
@@ -365,12 +398,20 @@ $panel.Add_Paint({
     $c = $sender.ClientRectangle
     $e.Graphics.DrawRectangle($pen, $c.X, $c.Y, ($c.Width - 1), ($c.Height - 1))
     $pen.Dispose()
+    # 日期标题（GDI+ ClearType 直绘，与日历数字一致）
+    if ($script:selText) {
+        $e.Graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+        $tf = New-Object System.Drawing.Font('Microsoft YaHei UI', 11)
+        $tb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(25, 25, 25))
+        $e.Graphics.DrawString($script:selText, $tf, $tb, [single]($pad + 2), [single]($pad + $script:calH + 10))
+        $tf.Dispose(); $tb.Dispose()
+    }
 })
 
 # ---------- 面板行为 ----------
 function Refresh-Panel {
     $sel = $script:selectedDate
-    $lblSel.Text = '{0}月{1}日 日程' -f $sel.Month, $sel.Day
+    $script:selText = '{0}年{1}月{2}日 日程' -f $sel.Year, $sel.Month, $sel.Day
     $script:eventDates = @{}
     foreach ($e2 in $script:events) { $script:eventDates[$e2.date] = $true }
     $calPanel.Invalidate()
@@ -418,9 +459,9 @@ $calPanel.Add_Paint({
     $sf = New-Object System.Drawing.StringFormat
     $sf.Alignment = [System.Drawing.StringAlignment]::Center
     $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $fontTitle = New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)
-    $fontDay   = New-Object System.Drawing.Font('Microsoft YaHei UI', 11)
-    $fontWd    = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+    $fontTitle = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $fontDay   = New-Object System.Drawing.Font('Segoe UI', 11)
+    $fontWd    = New-Object System.Drawing.Font('Segoe UI', 9)
     $gray  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(165, 165, 175))
     $dark  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(45, 45, 55))
     $blue  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(0, 120, 215))
@@ -588,101 +629,97 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
         $dlg.StartPosition = 'CenterScreen'
         $dlg.ShowInTaskbar = $false; $dlg.ShowIcon = $false
         $dlg.TopMost = $true
-        $dlg.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+        $dlg.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
-        $lblHead = New-Object System.Windows.Forms.Label
-        $lblHead.Text = $dlg.Text
-        $lblHead.Location = '24,20'; $lblHead.AutoSize = $true
-        $lblHead.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)
-        $lblHead.ForeColor = [System.Drawing.Color]::FromArgb(35, 35, 45)
-        $fieldFg = [System.Drawing.Color]::FromArgb(90, 90, 100)
-
-        $lblT = New-Object System.Windows.Forms.Label; $lblT.Text = '标题'; $lblT.Location = '24,66'; $lblT.AutoSize = $true
-        $lblT.ForeColor = $fieldFg; $lblT.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
+        # 文字标签改为在窗体 Paint 中 GDI+ 直绘（与主面板一致，不发虚）
         $txtT = New-Object System.Windows.Forms.TextBox; $txtT.Location = '80,60'; $txtT.Width = 296
-        $txtT.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10.5)
+        $txtT.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
         $txtT.BorderStyle = 'FixedSingle'
         if (-not $isNew) { $txtT.Text = $Existing.title }
 
-        $lblD = New-Object System.Windows.Forms.Label; $lblD.Text = '日期'; $lblD.Location = '24,110'; $lblD.AutoSize = $true
-        $lblD.ForeColor = $fieldFg; $lblD.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
         $dtpD = New-Object System.Windows.Forms.DateTimePicker
         $dtpD.Location = '80,104'; $dtpD.Width = 160; $dtpD.Format = 'Short'
         $dtpD.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
         if ($isNew) { $dtpD.Value = $DefaultDate.Date }
         else { $dtpD.Value = [DateTime]::ParseExact($Existing.date, 'yyyy-MM-dd', $null) }
 
-        $lblH = New-Object System.Windows.Forms.Label; $lblH.Text = '时间'; $lblH.Location = '24,154'; $lblH.AutoSize = $true
-        $lblH.ForeColor = $fieldFg; $lblH.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
-        $dtpH = New-Object System.Windows.Forms.DateTimePicker
-        $dtpH.Location = '80,148'; $dtpH.Width = 90; $dtpH.Format = 'Custom'
-        $dtpH.CustomFormat = 'HH:mm'; $dtpH.ShowUpDown = $true
-        $dtpH.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+        # 时/分两栏选择：小时 00-23 下拉，分钟 5 分钟一档下拉亦可手输
+        $initTime = '09:00'
         if ($isNew) {
-            if ($DefaultDate.Date -eq (Get-Date).Date) { $dtpH.Value = (Get-Date).AddMinutes(5) }
-            else { $dtpH.Value = [DateTime]::Parse('2026-01-01 09:00') }
-        } elseif ($Existing.time) {
-            $dtpH.Value = [DateTime]::ParseExact("2026-01-01 $($Existing.time)", 'yyyy-MM-dd HH:mm', $null)
-        } else {
-            $dtpH.Value = [DateTime]::Parse('2026-01-01 09:00')
-        }
+            if ($DefaultDate.Date -eq (Get-Date).Date) { $initTime = (Get-Date).AddMinutes(5).ToString('HH:mm') }
+        } elseif ($Existing.time) { $initTime = $Existing.time }
+        $initH = $initTime.Split(':')[0]
+        $initM = $initTime.Split(':')[1]
+        $cmbHour = New-Object System.Windows.Forms.ComboBox
+        $cmbHour.Location = '80,148'; $cmbHour.Width = 62
+        $cmbHour.DropDownStyle = 'DropDownList'
+        $cmbHour.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+        for ($hh = 0; $hh -lt 24; $hh++) { $cmbHour.Items.Add(('{0:00}' -f $hh)) | Out-Null }
+        $cmbHour.SelectedItem = ('{0:00}' -f [int]$initH)
+        $cmbMin = New-Object System.Windows.Forms.ComboBox
+        $cmbMin.Location = '156,148'; $cmbMin.Width = 62
+        $cmbMin.DropDownStyle = 'DropDown'
+        $cmbMin.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+        for ($mm = 0; $mm -lt 60; $mm += 5) { $cmbMin.Items.Add(('{0:00}' -f $mm)) | Out-Null }
+        $cmbMin.Text = $initM
 
         $chkAll = New-Object System.Windows.Forms.CheckBox
-        $chkAll.Text = '全天（不提醒）'; $chkAll.Location = '200,150'; $chkAll.AutoSize = $true
-        $chkAll.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
-        $chkAll.ForeColor = $fieldFg
+        $chkAll.Text = ''; $chkAll.Location = '232,150'
+        $chkAll.AutoSize = $false
+        $chkAll.Size = New-Object System.Drawing.Size(20, 20)
         if ($isNew) { $chkAll.Checked = $false } else { $chkAll.Checked = (-not $Existing.time) }
-        $dtpH.Enabled = -not $chkAll.Checked
-        $chkAll.Add_CheckedChanged({ $dtpH.Enabled = -not $chkAll.Checked })
+        $cmbHour.Enabled = -not $chkAll.Checked
+        $cmbMin.Enabled = -not $chkAll.Checked
+        $chkAll.Add_CheckedChanged({ $cmbHour.Enabled = -not $chkAll.Checked; $cmbMin.Enabled = -not $chkAll.Checked })
 
-        $hint = New-Object System.Windows.Forms.Label
-        $hint.Text = '定时日程到点弹提醒；全天只显示在列表。'
-        $hint.Location = '24,192'; $hint.AutoSize = $true
-        $hint.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 8.5)
-        $hint.ForeColor = [System.Drawing.Color]::FromArgb(135, 135, 145)
-
-        $btnOk = New-Object System.Windows.Forms.Button
-        $btnOk.Text = '保存'
-        $btnOk.Size = New-Object System.Drawing.Size(84, 32)
+        $btnOk = New-TextButton '保存' $true 84 32 10
         $btnOk.Location = New-Object System.Drawing.Point(198, 240)
-        $btnCancel = New-Object System.Windows.Forms.Button
-        $btnCancel.Text = '取消'
-        $btnCancel.Size = New-Object System.Drawing.Size(84, 32)
+        $btnCancel = New-TextButton '取消' $false 84 32 10
         $btnCancel.Location = New-Object System.Drawing.Point(292, 240)
-        $btnOk.FlatStyle = 'Flat'; $btnOk.FlatAppearance.BorderSize = 0
-        $btnOk.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
-        $btnOk.ForeColor = [System.Drawing.Color]::White
-        $btnOk.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(0, 104, 188)
-        $btnCancel.FlatStyle = 'Flat'
-        $btnCancel.BackColor = [System.Drawing.Color]::White
-        $btnCancel.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 68)
-        $btnCancel.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(210, 210, 218)
-        $btnCancel.FlatAppearance.BorderSize = 1
-        $btnCancel.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(240, 243, 247)
-        $btnFont = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
-        $btnOk.Font = $btnFont; $btnCancel.Font = $btnFont
+        $btnClose = New-Object System.Windows.Forms.Button
+        $btnClose.Text = '×'
+        $btnClose.Size = New-Object System.Drawing.Size(32, 26)
+        $btnClose.Location = New-Object System.Drawing.Point(352, 14)
+        $btnClose.FlatStyle = 'Flat'
+        $btnClose.FlatAppearance.BorderSize = 0
+        $btnClose.BackColor = [System.Drawing.Color]::FromArgb(214, 69, 69)
+        $btnClose.ForeColor = [System.Drawing.Color]::White
+        $btnClose.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+        $btnClose.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(190, 52, 52)
+        $btnClose.Add_Click({ $dlg.DialogResult = 'Cancel' })
         $btnOk.Add_Click({ $dlg.DialogResult = 'OK' })
         $btnCancel.Add_Click({ $dlg.DialogResult = 'Cancel' })
-        $dlg.Controls.AddRange(@($lblHead, $lblT, $txtT, $lblD, $dtpD, $lblH, $dtpH, $chkAll, $hint, $btnOk, $btnCancel))
+        $dlg.Controls.AddRange(@($btnClose, $txtT, $dtpD, $cmbHour, $cmbMin, $chkAll, $btnOk, $btnCancel))
         $dlg.AcceptButton = $btnOk; $dlg.CancelButton = $btnCancel
 
-        # 圆角卡片 + 1px 描边
-        $dlgR = 18
-        $dlgPath = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $dlgRc = $dlg.ClientRectangle
-        $dlgPath.AddArc($dlgRc.X, $dlgRc.Y, $dlgR, $dlgR, 180, 90)
-        $dlgPath.AddArc($dlgRc.Right - $dlgR, $dlgRc.Y, $dlgR, $dlgR, 270, 90)
-        $dlgPath.AddArc($dlgRc.Right - $dlgR, $dlgRc.Bottom - $dlgR, $dlgR, $dlgR, 0, 90)
-        $dlgPath.AddArc($dlgRc.X, $dlgRc.Bottom - $dlgR, $dlgR, $dlgR, 90, 90)
-        $dlgPath.CloseFigure()
-        $dlg.Region = New-Object System.Drawing.Region($dlgPath)
-        $dlgPath.Dispose()
+        # 圆角卡片 + 1px 描边（关闭自动缩放；显示后按真实尺寸重算圆角）
+        $dlg.AutoScaleMode = 'None'
+        $dlg.Add_Shown({ param($s, $e) Set-RoundedForm $s 10 })
+        $dlg.Add_Resize({ param($s, $e) Set-RoundedForm $s 10 })
         $dlg.Add_Paint({
             param($sender, $e)
+            $g = $e.Graphics
             $dlgPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 210, 216), 1)
             $dlgC = $sender.ClientRectangle
-            $e.Graphics.DrawRectangle($dlgPen, $dlgC.X, $dlgC.Y, ($dlgC.Width - 1), ($dlgC.Height - 1))
+            $g.DrawRectangle($dlgPen, $dlgC.X, $dlgC.Y, ($dlgC.Width - 1), ($dlgC.Height - 1))
             $dlgPen.Dispose()
+            $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+            $fHead = New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)
+            $bHead = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(35, 35, 45))
+            $g.DrawString($sender.Text, $fHead, $bHead, [single]24, [single]18)
+            $fHead.Dispose(); $bHead.Dispose()
+            $fLbl = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+            $bLbl = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(90, 90, 100))
+            $g.DrawString('标题', $fLbl, $bLbl, [single]24, [single]64)
+            $g.DrawString('日期', $fLbl, $bLbl, [single]24, [single]108)
+            $g.DrawString('时间', $fLbl, $bLbl, [single]24, [single]152)
+            $g.DrawString(':', $fLbl, $bLbl, [single]145, [single]151)
+            $g.DrawString('全天（不提醒）', $fLbl, $bLbl, [single]258, [single]152)
+            $bLbl.Dispose(); $fLbl.Dispose()
+            $fHint = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+            $bHint = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(135, 135, 145))
+            $g.DrawString('定时日程到点弹提醒；全天只显示在列表。', $fHint, $bHint, [single]24, [single]190)
+            $fHint.Dispose(); $bHint.Dispose()
         })
 
         $result = $dlg.ShowDialog()
@@ -695,7 +732,15 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
             return
         }
         $timeStr = $null
-        if (-not $chkAll.Checked) { $timeStr = $dtpH.Value.ToString('HH:mm') }
+        if (-not $chkAll.Checked) {
+            $mv = $cmbMin.Text.Trim()
+            if ($cmbHour.SelectedItem -and $mv -match '^\d{1,2}$' -and [int]$mv -ge 0 -and [int]$mv -le 59) {
+                $timeStr = $cmbHour.SelectedItem.ToString() + ':' + ([int]$mv).ToString('00')
+            } else {
+                [System.Windows.Forms.MessageBox]::Show('分钟应为 0~59 的数字，例如 05。', 'TrayCal', 'OK', 'Warning') | Out-Null
+                return
+            }
+        }
         $dateStr = $dtpD.Value.ToString('yyyy-MM-dd')
         $now = Get-Date
         $due = $null
@@ -792,64 +837,43 @@ function Show-NextReminder {
     $f.TopMost = $true
     $f.ShowInTaskbar = $false
     $f.StartPosition = 'Manual'
-    $f.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+    $f.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
-    $lblTime = New-Object System.Windows.Forms.Label
-    $lblTime.Text = "⏰ $($ev.time)"
-    $lblTime.Location = New-Object System.Drawing.Point(20, 16)
-    $lblTime.AutoSize = $true
-    $lblTime.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 11, [System.Drawing.FontStyle]::Bold)
-    $lblTime.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
-    $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text = $ev.title
-    $lblTitle.Location = New-Object System.Drawing.Point(20, 48)
-    $lblTitle.Size = New-Object System.Drawing.Size(360, 26)
-    $lblTitle.AutoEllipsis = $true
-    $lblTitle.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
-    $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(45, 45, 55)
-
-    $btnOk = New-Object System.Windows.Forms.Button
-    $btnOk.Text = '知道了'
-    $btnOk.Size = New-Object System.Drawing.Size(90, 32)
+    $f.Tag = $ev
+    $btnOk = New-TextButton '知道了' $true 90 32 10
     $btnOk.Location = New-Object System.Drawing.Point(($f.ClientSize.Width - 20 - 110 - 10 - 90), ($f.ClientSize.Height - 20 - 32))
     $btnOk.Tag = $ev
-    $btnSnooze = New-Object System.Windows.Forms.Button
-    $btnSnooze.Text = '稍后10分钟'
-    $btnSnooze.Size = New-Object System.Drawing.Size(110, 32)
+    $btnSnooze = New-TextButton '稍后10分钟' $false 110 32 10
     $btnSnooze.Location = New-Object System.Drawing.Point(($f.ClientSize.Width - 20 - 110), ($f.ClientSize.Height - 20 - 32))
     $btnSnooze.Tag = $ev
-    $f.Controls.AddRange(@($lblTime, $lblTitle, $btnOk, $btnSnooze))
+    $f.Controls.AddRange(@($btnOk, $btnSnooze))
 
-    # 圆角卡片 + 1px 描边，与主面板同风格
-    $rmR = 16
-    $rmPath = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $rmRc = $f.ClientRectangle
-    $rmPath.AddArc($rmRc.X, $rmRc.Y, $rmR, $rmR, 180, 90)
-    $rmPath.AddArc($rmRc.Right - $rmR, $rmRc.Y, $rmR, $rmR, 270, 90)
-    $rmPath.AddArc($rmRc.Right - $rmR, $rmRc.Bottom - $rmR, $rmR, $rmR, 0, 90)
-    $rmPath.AddArc($rmRc.X, $rmRc.Bottom - $rmR, $rmR, $rmR, 90, 90)
-    $rmPath.CloseFigure()
-    $f.Region = New-Object System.Drawing.Region($rmPath)
-    $rmPath.Dispose()
+    # 圆角卡片 + 1px 描边，与主面板同风格（显示后按真实尺寸重算）
+    $f.AutoScaleMode = 'None'
+    $f.Add_Shown({ param($s, $e) Set-RoundedForm $s 10 })
+    $f.Add_Resize({ param($s, $e) Set-RoundedForm $s 10 })
     $f.Add_Paint({
         param($sender, $e)
+        $g = $e.Graphics
         $rmPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 210, 216), 1)
         $rmC = $sender.ClientRectangle
-        $e.Graphics.DrawRectangle($rmPen, $rmC.X, $rmC.Y, ($rmC.Width - 1), ($rmC.Height - 1))
+        $g.DrawRectangle($rmPen, $rmC.X, $rmC.Y, ($rmC.Width - 1), ($rmC.Height - 1))
         $rmPen.Dispose()
+        if ($sender.Tag) {
+            $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+            $evP = $sender.Tag
+            $fTime = New-Object System.Drawing.Font('Microsoft YaHei UI', 11, [System.Drawing.FontStyle]::Bold)
+            $bTime = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(0, 120, 215))
+            $g.DrawString("⏰ $($evP.time)", $fTime, $bTime, [single]20, [single]14)
+            $fTitle = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+            $bTitle = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(45, 45, 55))
+            $sfT = New-Object System.Drawing.StringFormat
+            $sfT.Trimming = [System.Drawing.StringTrimming]::EllipsisCharacter
+            $sfT.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap
+            $g.DrawString($evP.title, $fTitle, $bTitle, (New-Object System.Drawing.RectangleF(20, 46, 360, 24)), $sfT)
+            $fTime.Dispose(); $bTime.Dispose(); $fTitle.Dispose(); $bTitle.Dispose(); $sfT.Dispose()
+        }
     })
-
-    $btnOk.FlatStyle = 'Flat'
-    $btnOk.FlatAppearance.BorderSize = 0
-    $btnOk.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
-    $btnOk.ForeColor = [System.Drawing.Color]::White
-    $btnOk.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(0, 104, 188)
-    $btnSnooze.FlatStyle = 'Flat'
-    $btnSnooze.BackColor = [System.Drawing.Color]::White
-    $btnSnooze.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 68)
-    $btnSnooze.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(210, 210, 218)
-    $btnSnooze.FlatAppearance.BorderSize = 1
-    $btnSnooze.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(240, 243, 247)
 
     $btnOk.Add_Click({
         param($sender, $e)
