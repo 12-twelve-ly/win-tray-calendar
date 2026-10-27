@@ -1,0 +1,11 @@
+# 运行时数据不入库（用户日程，隐私）
+data/
+*.log
+
+# 备份残留
+*.bak
+~$*
+
+# Windows
+Thumbs.db
+Desktop.ini
