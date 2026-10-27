@@ -275,7 +275,7 @@ $btnAdd = New-PanelButton '添加日程' $true
 $btnEdit = New-PanelButton '编辑' $false
 $btnDel = New-PanelButton '删除' $false
 $btnCopyWeek = New-PanelButton '复制本周→下周' $false
-$btnCopyWeek.Size = New-Object System.Drawing.Size(120, 20)
+$btnCopyWeek.Size = New-Object System.Drawing.Size(120, 24)
 $btnCopyWeek.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 8)
 $panel.Controls.AddRange(@($btnAdd, $btnEdit, $btnDel, $btnCopyWeek))
 
@@ -307,11 +307,11 @@ function Sync-PanelSize {
     $mc.Size = New-Object System.Drawing.Size($w, $h)
     $lvH = 132
     $btnH = 32
-    $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + 6 + 20 + 2 + $lvH + 6 + $btnH + $pad))
+    $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + 34 + $lvH + 6 + $btnH + $pad))
     $mc.Location = New-Object System.Drawing.Point($pad, $pad)
-    $lblSel.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 4))
-    $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 120), ($pad + $h + 2))
-    $lv.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 26))
+    $lblSel.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 7))
+    $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 120), ($pad + $h + 3))
+    $lv.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 34))
     $lv.Size = New-Object System.Drawing.Size($w, $lvH)
     $by = ($pad + $h + 26 + $lvH + 6)
     $btnAdd.Size = New-Object System.Drawing.Size(86, $btnH)
