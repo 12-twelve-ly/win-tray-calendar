@@ -582,28 +582,42 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
     try {
         $dlg = New-Object System.Windows.Forms.Form
         $dlg.Text = $(if ($isNew) { '添加日程' } else { '编辑日程' })
-        $dlg.ClientSize = New-Object System.Drawing.Size(340, 200)
-        $dlg.FormBorderStyle = 'FixedDialog'
+        $dlg.ClientSize = New-Object System.Drawing.Size(400, 296)
+        $dlg.FormBorderStyle = 'None'
+        $dlg.BackColor = [System.Drawing.Color]::White
         $dlg.StartPosition = 'CenterScreen'
-        $dlg.MinimizeBox = $false; $dlg.MaximizeBox = $false
         $dlg.ShowInTaskbar = $false; $dlg.ShowIcon = $false
         $dlg.TopMost = $true
         $dlg.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 
-        $lblT = New-Object System.Windows.Forms.Label; $lblT.Text = '标题'; $lblT.Location = '14,17'; $lblT.AutoSize = $true
-        $txtT = New-Object System.Windows.Forms.TextBox; $txtT.Location = '70,14'; $txtT.Width = 256
+        $lblHead = New-Object System.Windows.Forms.Label
+        $lblHead.Text = $dlg.Text
+        $lblHead.Location = '24,20'; $lblHead.AutoSize = $true
+        $lblHead.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)
+        $lblHead.ForeColor = [System.Drawing.Color]::FromArgb(35, 35, 45)
+        $fieldFg = [System.Drawing.Color]::FromArgb(90, 90, 100)
+
+        $lblT = New-Object System.Windows.Forms.Label; $lblT.Text = '标题'; $lblT.Location = '24,66'; $lblT.AutoSize = $true
+        $lblT.ForeColor = $fieldFg; $lblT.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
+        $txtT = New-Object System.Windows.Forms.TextBox; $txtT.Location = '80,60'; $txtT.Width = 296
+        $txtT.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10.5)
+        $txtT.BorderStyle = 'FixedSingle'
         if (-not $isNew) { $txtT.Text = $Existing.title }
 
-        $lblD = New-Object System.Windows.Forms.Label; $lblD.Text = '日期'; $lblD.Location = '14,49'; $lblD.AutoSize = $true
+        $lblD = New-Object System.Windows.Forms.Label; $lblD.Text = '日期'; $lblD.Location = '24,110'; $lblD.AutoSize = $true
+        $lblD.ForeColor = $fieldFg; $lblD.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
         $dtpD = New-Object System.Windows.Forms.DateTimePicker
-        $dtpD.Location = '70,46'; $dtpD.Width = 150; $dtpD.Format = 'Short'
+        $dtpD.Location = '80,104'; $dtpD.Width = 160; $dtpD.Format = 'Short'
+        $dtpD.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
         if ($isNew) { $dtpD.Value = $DefaultDate.Date }
         else { $dtpD.Value = [DateTime]::ParseExact($Existing.date, 'yyyy-MM-dd', $null) }
 
-        $lblH = New-Object System.Windows.Forms.Label; $lblH.Text = '时间'; $lblH.Location = '14,81'; $lblH.AutoSize = $true
+        $lblH = New-Object System.Windows.Forms.Label; $lblH.Text = '时间'; $lblH.Location = '24,154'; $lblH.AutoSize = $true
+        $lblH.ForeColor = $fieldFg; $lblH.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
         $dtpH = New-Object System.Windows.Forms.DateTimePicker
-        $dtpH.Location = '70,78'; $dtpH.Width = 90; $dtpH.Format = 'Custom'
+        $dtpH.Location = '80,148'; $dtpH.Width = 90; $dtpH.Format = 'Custom'
         $dtpH.CustomFormat = 'HH:mm'; $dtpH.ShowUpDown = $true
+        $dtpH.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
         if ($isNew) {
             if ($DefaultDate.Date -eq (Get-Date).Date) { $dtpH.Value = (Get-Date).AddMinutes(5) }
             else { $dtpH.Value = [DateTime]::Parse('2026-01-01 09:00') }
@@ -614,22 +628,62 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
         }
 
         $chkAll = New-Object System.Windows.Forms.CheckBox
-        $chkAll.Text = '全天（不提醒）'; $chkAll.Location = '170,78'; $chkAll.AutoSize = $true
+        $chkAll.Text = '全天（不提醒）'; $chkAll.Location = '200,150'; $chkAll.AutoSize = $true
+        $chkAll.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
+        $chkAll.ForeColor = $fieldFg
         if ($isNew) { $chkAll.Checked = $false } else { $chkAll.Checked = (-not $Existing.time) }
         $dtpH.Enabled = -not $chkAll.Checked
         $chkAll.Add_CheckedChanged({ $dtpH.Enabled = -not $chkAll.Checked })
 
         $hint = New-Object System.Windows.Forms.Label
         $hint.Text = '定时日程到点弹提醒；全天只显示在列表。'
-        $hint.Location = '14,110'; $hint.AutoSize = $true
-        $hint.ForeColor = [System.Drawing.Color]::DimGray
+        $hint.Location = '24,192'; $hint.AutoSize = $true
+        $hint.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 8.5)
+        $hint.ForeColor = [System.Drawing.Color]::FromArgb(135, 135, 145)
 
-        $btnOk = New-Object System.Windows.Forms.Button; $btnOk.Text = '保存'; $btnOk.Location = '90,148'; $btnOk.Size = '80,28'
-        $btnCancel = New-Object System.Windows.Forms.Button; $btnCancel.Text = '取消'; $btnCancel.Location = '180,148'; $btnCancel.Size = '80,28'
+        $btnOk = New-Object System.Windows.Forms.Button
+        $btnOk.Text = '保存'
+        $btnOk.Size = New-Object System.Drawing.Size(84, 32)
+        $btnOk.Location = New-Object System.Drawing.Point(198, 240)
+        $btnCancel = New-Object System.Windows.Forms.Button
+        $btnCancel.Text = '取消'
+        $btnCancel.Size = New-Object System.Drawing.Size(84, 32)
+        $btnCancel.Location = New-Object System.Drawing.Point(292, 240)
+        $btnOk.FlatStyle = 'Flat'; $btnOk.FlatAppearance.BorderSize = 0
+        $btnOk.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
+        $btnOk.ForeColor = [System.Drawing.Color]::White
+        $btnOk.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(0, 104, 188)
+        $btnCancel.FlatStyle = 'Flat'
+        $btnCancel.BackColor = [System.Drawing.Color]::White
+        $btnCancel.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 68)
+        $btnCancel.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(210, 210, 218)
+        $btnCancel.FlatAppearance.BorderSize = 1
+        $btnCancel.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(240, 243, 247)
+        $btnFont = New-Object System.Drawing.Font('Microsoft YaHei UI', 9.5)
+        $btnOk.Font = $btnFont; $btnCancel.Font = $btnFont
         $btnOk.Add_Click({ $dlg.DialogResult = 'OK' })
         $btnCancel.Add_Click({ $dlg.DialogResult = 'Cancel' })
-        $dlg.Controls.AddRange(@($lblT, $txtT, $lblD, $dtpD, $lblH, $dtpH, $chkAll, $hint, $btnOk, $btnCancel))
+        $dlg.Controls.AddRange(@($lblHead, $lblT, $txtT, $lblD, $dtpD, $lblH, $dtpH, $chkAll, $hint, $btnOk, $btnCancel))
         $dlg.AcceptButton = $btnOk; $dlg.CancelButton = $btnCancel
+
+        # 圆角卡片 + 1px 描边
+        $dlgR = 18
+        $dlgPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $dlgRc = $dlg.ClientRectangle
+        $dlgPath.AddArc($dlgRc.X, $dlgRc.Y, $dlgR, $dlgR, 180, 90)
+        $dlgPath.AddArc($dlgRc.Right - $dlgR, $dlgRc.Y, $dlgR, $dlgR, 270, 90)
+        $dlgPath.AddArc($dlgRc.Right - $dlgR, $dlgRc.Bottom - $dlgR, $dlgR, $dlgR, 0, 90)
+        $dlgPath.AddArc($dlgRc.X, $dlgRc.Bottom - $dlgR, $dlgR, $dlgR, 90, 90)
+        $dlgPath.CloseFigure()
+        $dlg.Region = New-Object System.Drawing.Region($dlgPath)
+        $dlgPath.Dispose()
+        $dlg.Add_Paint({
+            param($sender, $e)
+            $dlgPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 210, 216), 1)
+            $dlgC = $sender.ClientRectangle
+            $e.Graphics.DrawRectangle($dlgPen, $dlgC.X, $dlgC.Y, ($dlgC.Width - 1), ($dlgC.Height - 1))
+            $dlgPen.Dispose()
+        })
 
         $result = $dlg.ShowDialog()
         $dlg.Dispose()
