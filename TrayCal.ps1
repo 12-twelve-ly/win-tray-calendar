@@ -178,6 +178,8 @@ if (-not $mutex.WaitOne(0)) {
 # ---------- 运行状态 ----------
 $script:events = @()
 $script:selectedDate = (Get-Date).Date
+$script:viewMonth = New-Object DateTime((Get-Date).Year, (Get-Date).Month, 1)
+$script:eventDates = @{}
 $script:suppressHide = $false
 try { New-Item -ItemType Directory -Path $DataDir -ErrorAction SilentlyContinue | Out-Null } catch { }
 try {
@@ -238,11 +240,15 @@ $panel.TopMost = $true
 $panel.StartPosition = 'Manual'
 $panel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 
-$mc = New-Object System.Windows.Forms.MonthCalendar
-$mc.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 14)
-$mc.FirstDayOfWeek = [System.Windows.Forms.Day]::Monday
-$mc.ShowTodayCircle = $true
-$panel.Controls.Add($mc) | Out-Null
+# 自绘月历（原生 MonthCalendar 尺寸受系统限制，无法填满卡片）
+$script:calW = 336
+$script:calH = 320
+$calPanel = New-Object System.Windows.Forms.Panel
+$calPanel.Size = New-Object System.Drawing.Size($script:calW, $script:calH)
+try {
+    $calPanel.GetType().GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'Instance,NonPublic').SetValue($calPanel, $true)
+} catch { }
+$panel.Controls.Add($calPanel) | Out-Null
 
 $lblSel = New-Object System.Windows.Forms.Label
 $lblSel.AutoSize = $false
@@ -266,6 +272,7 @@ function New-PanelButton($text, $accent) {
     $b.Text = $text
     $b.Size = New-Object System.Drawing.Size(72, 28)
     $b.FlatStyle = 'Flat'
+    $b.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     if ($accent) {
         $b.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
         $b.ForeColor = [System.Drawing.Color]::White
@@ -300,16 +307,14 @@ function Set-CardRegion {
 }
 
 function Sync-PanelSize {
-    if (-not $script:handleReady) { [void]$panel.Handle; [void]$mc.Handle; $script:handleReady = $true }
-    # 句柄创建后月历才报告真实尺寸；面板宽度严格跟随月历，避免右侧留白
-    $w = $mc.Width
-    $h = $mc.Height
+    $w = $script:calW
+    $h = $script:calH
     $lvH = 120
     $btnH = 32
     $rowH = 26          # 日期行（复制按钮高 24）
     $gap  = 12          # 列表与按钮行的间距
     $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + $rowH + $lvH + $gap + $btnH + $pad))
-    $mc.Location = New-Object System.Drawing.Point($pad, $pad)
+    $calPanel.Location = New-Object System.Drawing.Point($pad, $pad)
     $lblSel.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 7))
     $lblSel.Width = [Math]::Max(80, ($w - 128))
     $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 120), ($pad + $h + 3))
@@ -343,11 +348,9 @@ $panel.Add_Paint({
 function Refresh-Panel {
     $sel = $script:selectedDate
     $lblSel.Text = '{0}月{1}日 日程' -f $sel.Month, $sel.Day
-    $dayDates = @($script:events | ForEach-Object {
-        try { [DateTime]::ParseExact($_.date, 'yyyy-MM-dd', $null) } catch { $null }
-    } | Where-Object { $_ })
-    if ($dayDates.Count -gt 0) { $mc.BoldedDates = [DateTime[]]$dayDates } else { $mc.BoldedDates = New-Object 'DateTime[]' 0 }
-    # 加粗会改变月历实际宽度，内容更新后必须重新校准面板尺寸
+    $script:eventDates = @{}
+    foreach ($e2 in $script:events) { $script:eventDates[$e2.date] = $true }
+    $calPanel.Invalidate()
     Sync-PanelSize
     $lv.Items.Clear()
     $dayEvents = @($script:events | Where-Object { $_.date -eq $sel.ToString('yyyy-MM-dd') } |
@@ -379,9 +382,87 @@ $panel.Add_Deactivate({
     if (-not $script:suppressHide -and -not $KeepOpen -and $panel.Visible) { Hide-Panel }
 })
 
-$mc.Add_DateSelected({
+$calPanel.Add_Paint({
     param($sender, $e)
-    $script:selectedDate = $e.Start.Date
+    $g = $e.Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+    $W = $sender.Width; $H = $sender.Height
+    $headH = 34.0; $wdH = 24.0
+    $cellW = $W / 7.0
+    $cellH = ($H - $headH - $wdH) / 6.0
+    $vm = $script:viewMonth
+    $sf = New-Object System.Drawing.StringFormat
+    $sf.Alignment = [System.Drawing.StringAlignment]::Center
+    $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+    $fontTitle = New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)
+    $fontDay   = New-Object System.Drawing.Font('Microsoft YaHei UI', 11)
+    $fontWd    = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+    $gray  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(165, 165, 175))
+    $dark  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(45, 45, 55))
+    $blue  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(0, 120, 215))
+    $white = [System.Drawing.Brushes]::White
+    $g.DrawString(('{0}年{1}月' -f $vm.Year, $vm.Month), $fontTitle, $dark, (New-Object System.Drawing.RectangleF(0, 0, $W, $headH)), $sf)
+    $g.DrawString([string][char]0x2039, $fontTitle, $gray, (New-Object System.Drawing.RectangleF(2, 0, 32, $headH)), $sf)
+    $g.DrawString([string][char]0x203A, $fontTitle, $gray, (New-Object System.Drawing.RectangleF(($W - 34), 0, 32, $headH)), $sf)
+    $names = @('一', '二', '三', '四', '五', '六', '日')
+    for ($i = 0; $i -lt 7; $i++) {
+        $r = New-Object System.Drawing.RectangleF(($i * $cellW), $headH, $cellW, $wdH)
+        $g.DrawString($names[$i], $fontWd, $gray, $r, $sf)
+    }
+    $dowOff = (([int]$vm.DayOfWeek) + 6) % 7
+    $start = $vm.AddDays(-$dowOff)
+    $today = (Get-Date).Date
+    for ($row = 0; $row -lt 6; $row++) {
+        for ($col = 0; $col -lt 7; $col++) {
+            $d = $start.AddDays($row * 7 + $col)
+            $rect = New-Object System.Drawing.RectangleF(($col * $cellW), ($headH + $wdH + $row * $cellH), $cellW, $cellH)
+            $cx = $rect.X + $cellW / 2.0
+            $cy = $rect.Y + $cellH / 2.0
+            if ($d -eq $today) {
+                $g.FillEllipse($blue, [single]($cx - 16), [single]($cy - 16), 32, 32)
+                $g.DrawString([string]$d.Day, $fontDay, $white, $rect, $sf)
+            } else {
+                if ($d -eq $script:selectedDate) {
+                    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(0, 120, 215), 1.6)
+                    $g.DrawEllipse($pen, [single]($cx - 16), [single]($cy - 16), 32, 32)
+                    $pen.Dispose()
+                }
+                $brush = if ($d.Month -ne $vm.Month) { $gray } else { $dark }
+                $g.DrawString([string]$d.Day, $fontDay, $brush, $rect, $sf)
+            }
+            if ($script:eventDates.ContainsKey($d.ToString('yyyy-MM-dd'))) {
+                $g.FillEllipse($blue, [single]($cx - 2.5), [single]($rect.Y + $cellH - 8), 5, 5)
+            }
+        }
+    }
+    $fontTitle.Dispose(); $fontDay.Dispose(); $fontWd.Dispose()
+    $gray.Dispose(); $dark.Dispose(); $blue.Dispose()
+})
+
+$calPanel.Add_MouseUp({
+    param($sender, $e)
+    $W = $sender.Width; $H = $sender.Height
+    $headH = 34.0; $wdH = 24.0
+    if ($e.Y -lt $headH) {
+        if ($e.X -lt 40) { $script:viewMonth = $script:viewMonth.AddMonths(-1) }
+        elseif ($e.X -gt ($W - 40)) { $script:viewMonth = $script:viewMonth.AddMonths(1) }
+        else { return }
+        $sender.Invalidate()
+        return
+    }
+    if ($e.Y -lt ($headH + $wdH)) { return }
+    $cellW = $W / 7.0
+    $cellH = ($H - $headH - $wdH) / 6.0
+    $c = [int][Math]::Floor($e.X / $cellW)
+    $r = [int][Math]::Floor(($e.Y - $headH - $wdH) / $cellH)
+    if ($c -lt 0 -or $c -gt 6 -or $r -lt 0 -or $r -gt 5) { return }
+    $dowOff = (([int]$script:viewMonth.DayOfWeek) + 6) % 7
+    $d = $script:viewMonth.AddDays(-$dowOff + $r * 7 + $c)
+    if ($d.Month -ne $script:viewMonth.Month) {
+        $script:viewMonth = New-Object DateTime($d.Year, $d.Month, 1)
+    }
+    $script:selectedDate = $d.Date
     Refresh-Panel
 })
 
@@ -473,7 +554,7 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
         else { $script:events = @($script:events | ForEach-Object { if ($_.id -eq $ev.id) { $ev } else { $_ } }) }
         Save-Events $DataFile $script:events
         $script:selectedDate = [DateTime]::ParseExact($dateStr, 'yyyy-MM-dd', $null)
-        $mc.SetDate($script:selectedDate)
+        $script:viewMonth = New-Object DateTime($script:selectedDate.Year, $script:selectedDate.Month, 1)
         Refresh-Panel
     } finally {
         $script:suppressHide = $false
