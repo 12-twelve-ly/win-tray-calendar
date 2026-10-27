@@ -83,6 +83,32 @@ function Clear-StaleEvents($Events, [DateTime]$Now) {
     return $Events
 }
 
+function Get-WeekStart([DateTime]$d) {
+    # 周一为一周之首
+    $d = $d.Date
+    $dow = (([int]$d.DayOfWeek) + 6) % 7
+    return $d.AddDays(-$dow)
+}
+
+function Copy-WeekEvents($Events, [DateTime]$WeekStart, [int]$OffsetDays) {
+    $end = $WeekStart.AddDays(6)
+    $new = @()
+    foreach ($ev in $Events) {
+        $d = [DateTime]::ParseExact($ev.date, 'yyyy-MM-dd', $null)
+        if ($d -ge $WeekStart -and $d -le $end) {
+            $new += @{
+                id          = Get-NewEventId
+                title       = $ev.title
+                date        = $d.AddDays($OffsetDays).ToString('yyyy-MM-dd')
+                time        = $ev.time
+                reminded    = $false
+                snoozeUntil = $null
+            }
+        }
+    }
+    return $new
+}
+
 # ---------- SelfTest：数据层冒烟测试 ----------
 if ($SelfTest) {
     $fail = 0
@@ -118,6 +144,17 @@ if ($SelfTest) {
         $err = $null
         try { Load-Events $tmpFile | Out-Null } catch { $err = 1 }
         Assert ($null -ne $err) '容错：损坏文件明确报错'
+        Assert ((Get-WeekStart ([DateTime]'2026-10-27')) -eq [DateTime]'2026-10-26') '周计算：周二归到周一'
+        Assert ((Get-WeekStart ([DateTime]'2026-10-26')) -eq [DateTime]'2026-10-26') '周计算：周一归到自己'
+        $srcEvs = @(
+            @{ id = 'x1'; title = '本周事项'; date = '2026-10-27'; time = '10:00'; reminded = $false; snoozeUntil = $null },
+            @{ id = 'x2'; title = '下周事项'; date = '2026-11-03'; time = $null; reminded = $false; snoozeUntil = $null }
+        )
+        $copied = @(Copy-WeekEvents $srcEvs ([DateTime]'2026-10-26') 7)
+        Assert ($copied.Count -eq 1) '复制周：只取本周范围内的日程'
+        Assert ($copied[0].date -eq '2026-11-03') '复制周：日期平移+7天'
+        Assert ($copied[0].id -ne 'x1') '复制周：生成新 id'
+        Assert ($copied[0].reminded -eq $false) '复制周：重置提醒状态'
     } finally { Remove-Item $tmpFile -ErrorAction SilentlyContinue }
     if ($fail -eq 0) { Write-Host 'SelfTest 全部通过' -ForegroundColor Green; exit 0 }
     else { Write-Host "SelfTest 失败 $fail 项" -ForegroundColor Red; exit 1 }
@@ -237,7 +274,10 @@ function New-PanelButton($text, $accent) {
 $btnAdd = New-PanelButton '添加日程' $true
 $btnEdit = New-PanelButton '编辑' $false
 $btnDel = New-PanelButton '删除' $false
-$panel.Controls.AddRange(@($btnAdd, $btnEdit, $btnDel))
+$btnCopyWeek = New-PanelButton '复制本周→下周' $false
+$btnCopyWeek.Size = New-Object System.Drawing.Size(120, 20)
+$btnCopyWeek.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 8)
+$panel.Controls.AddRange(@($btnAdd, $btnEdit, $btnDel, $btnCopyWeek))
 
 # 布局与圆角：控件句柄创建后月历真实尺寸才准，弹出时再校准
 $pad = 14
@@ -270,6 +310,7 @@ function Sync-PanelSize {
     $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + 6 + 20 + 2 + $lvH + 6 + $btnH + $pad))
     $mc.Location = New-Object System.Drawing.Point($pad, $pad)
     $lblSel.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 4))
+    $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 120), ($pad + $h + 2))
     $lv.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 26))
     $lv.Size = New-Object System.Drawing.Size($w, $lvH)
     $by = ($pad + $h + 26 + $lvH + 6)
@@ -452,6 +493,32 @@ $btnDel.Add_Click({
         }
     } finally { $script:suppressHide = $false }
 })
+$btnCopyWeek.Add_Click({
+    $script:suppressHide = $true
+    try {
+        $ws = Get-WeekStart $script:selectedDate
+        $we = $ws.AddDays(6)
+        $cnt = @($script:events | Where-Object {
+            $d = [DateTime]::ParseExact($_.date, 'yyyy-MM-dd', $null)
+            $d -ge $ws -and $d -le $we
+        }).Count
+        if ($cnt -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("本周（$($ws.ToString('M月d日'))~$($we.ToString('M月d日'))）没有日程可复制。", 'TrayCal', 'OK', 'Information') | Out-Null
+            return
+        }
+        $r = [System.Windows.Forms.MessageBox]::Show("把 $($ws.ToString('M月d日'))~$($we.ToString('M月d日')) 的 $cnt 条日程复制到下一周？`n`n（下周已有相同日程时会重复添加）", 'TrayCal', 'YesNo', 'Question')
+        if ($r -ne 'Yes') { return }
+        $newEvs = @(Copy-WeekEvents $script:events $ws 7)
+        $script:events = @($script:events) + $newEvs
+        Save-Events $DataFile $script:events
+        Refresh-Panel
+        [System.Windows.Forms.MessageBox]::Show("已复制 $($newEvs.Count) 条日程到 $($ws.AddDays(7).ToString('M月d日'))~$($we.AddDays(7).ToString('M月d日'))。", 'TrayCal', 'OK', 'Information') | Out-Null
+    } catch {
+        Write-Log "复制本周失败: $_"
+        [System.Windows.Forms.MessageBox]::Show("复制失败：$($_.Exception.Message)", 'TrayCal', 'OK', 'Warning') | Out-Null
+    } finally { $script:suppressHide = $false }
+})
+
 $lv.Add_MouseDoubleClick({
     $ev = Get-SelectedEvent
     if ($ev) { Show-EditDialog $ev $script:selectedDate }
