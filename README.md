@@ -23,8 +23,9 @@ TrayCal 把手机日历"点一下记日程"的体验搬回桌面，体积小到�
 | 功能 | 操作 |
 |------|------|
 | 查看月历 | 左键托盘图标，面板从右下角弹出；点面板外自动收起 |
-| 有日程的日期 | 月历上以**加粗**显示 |
-| 添加日程 | 点日期 → "添加日程" → 标题必填；可带时间或勾选"全天" |
+| 切换月份/年份 | 鼠标悬停日历滚动滚轮切换；点标题在"日→月→年"视图间循环切换；左右箭头按当前视图单位步进 |
+| 有日程的日期 | 日期下方显示蓝色小圆点 |
+| 添加日程 | 点日期 → "添加日程" → 标题必填；时间用"时/分"两栏下拉（5 分钟一档，分钟可手输），或勾选"全天" |
 | 定时提醒 | 带时间的日程到点：右下角弹窗（知道了 / 稍后10分钟）+ 提示音 |
 | 全天事项 | 只列在当天列表，不提醒 |
 | 编辑 / 删除 | 选中列表项点按钮，或双击列表项编辑；删除有确认 |
@@ -59,10 +60,12 @@ TrayCal 把手机日历"点一下记日程"的体验搬回桌面，体积小到�
 ## 开发自测
 
 ```
-powershell -File TrayCal.ps1 -SelfTest     # 数据层 13 项断言
-powershell -File TrayCal.ps1 -Show         # 启动并自动弹出面板（截图/演示用）
-powershell -File TrayCal.ps1 -Demo         # 连添加对话框一起弹出
-powershell -File TrayCal.ps1 -DemoReminder # 弹一条测试提醒
+powershell -File TrayCal.ps1 -SelfTest       # 数据层断言（含周计算/复制逻辑）
+powershell -File TrayCal.ps1 -Show           # 启动并自动弹出面板（截图/演示用）
+powershell -File TrayCal.ps1 -Demo           # 连添加对话框一起弹出
+powershell -File TrayCal.ps1 -DemoReminder   # 弹一条测试提醒
+powershell -File TrayCal.ps1 -DemoCalMonth   # 月历初始为"月选择"视图
+powershell -File TrayCal.ps1 -DemoCalYear    # 月历初始为"年选择"视图
 ```
 
 界面异常不会弹 .NET 崩溃窗：统一兜底写日志到 `data/traycal.log`。
