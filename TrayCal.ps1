@@ -239,13 +239,15 @@ $panel.StartPosition = 'Manual'
 $panel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 
 $mc = New-Object System.Windows.Forms.MonthCalendar
-$mc.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 13)
+$mc.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 14)
 $mc.FirstDayOfWeek = [System.Windows.Forms.Day]::Monday
 $mc.ShowTodayCircle = $true
 $panel.Controls.Add($mc) | Out-Null
 
 $lblSel = New-Object System.Windows.Forms.Label
-$lblSel.AutoSize = $true
+$lblSel.AutoSize = $false
+$lblSel.Height = 20
+$lblSel.AutoEllipsis = $true
 $lblSel.ForeColor = [System.Drawing.Color]::FromArgb(60, 60, 70)
 $panel.Controls.Add($lblSel) | Out-Null
 
@@ -299,21 +301,24 @@ function Set-CardRegion {
 
 function Sync-PanelSize {
     if (-not $script:handleReady) { [void]$panel.Handle; [void]$mc.Handle; $script:handleReady = $true }
-    # 面板宽度以"实测字宽×7列"为准，不信任控件报告的默认宽度（加粗与中文都可能更宽）
-    $cellW = ([System.Windows.Forms.TextRenderer]::MeasureText('28', $mc.Font)).Width + 10
-    $needW = $cellW * 7 + 24
-    $w = [Math]::Max($mc.Width, $needW)
+    # 句柄创建后月历才报告真实尺寸；面板宽度严格跟随月历，避免右侧留白
+    $w = $mc.Width
     $h = $mc.Height
-    $mc.Size = New-Object System.Drawing.Size($w, $h)
     $lvH = 120
     $btnH = 32
-    $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + 34 + $lvH + 6 + $btnH + $pad))
+    $rowH = 26          # 日期行（复制按钮高 24）
+    $gap  = 12          # 列表与按钮行的间距
+    $panel.ClientSize = New-Object System.Drawing.Size(($w + $pad * 2), ($pad + $h + $rowH + $lvH + $gap + $btnH + $pad))
     $mc.Location = New-Object System.Drawing.Point($pad, $pad)
     $lblSel.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 7))
+    $lblSel.Width = [Math]::Max(80, ($w - 128))
     $btnCopyWeek.Location = New-Object System.Drawing.Point(($pad + $w - 120), ($pad + $h + 3))
-    $lv.Location = New-Object System.Drawing.Point($pad, ($pad + $h + 34))
+    $lv.Location = New-Object System.Drawing.Point($pad, ($pad + $h + $rowH + 2))
     $lv.Size = New-Object System.Drawing.Size($w, $lvH)
-    $by = ($pad + $h + 26 + $lvH + 6)
+    # 列宽自适应，不产生横向滚动条
+    $lv.Columns[0].Width = 58
+    $lv.Columns[1].Width = [Math]::Max(120, ($w - 58 - 24))
+    $by = ($pad + $h + $rowH + 2 + $lvH + $gap)
     $btnAdd.Size = New-Object System.Drawing.Size(86, $btnH)
     $btnAdd.Location = New-Object System.Drawing.Point($pad, $by)
     $rightX = ($panel.ClientSize.Width - $pad - 72)
@@ -337,7 +342,7 @@ $panel.Add_Paint({
 # ---------- 面板行为 ----------
 function Refresh-Panel {
     $sel = $script:selectedDate
-    $lblSel.Text = '{0}年{1}月{2}日 日程' -f $sel.Year, $sel.Month, $sel.Day
+    $lblSel.Text = '{0}月{1}日 日程' -f $sel.Month, $sel.Day
     $dayDates = @($script:events | ForEach-Object {
         try { [DateTime]::ParseExact($_.date, 'yyyy-MM-dd', $null) } catch { $null }
     } | Where-Object { $_ })
