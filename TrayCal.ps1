@@ -4,6 +4,7 @@ param(
     [switch]$SelfTest,
     [switch]$Show,       # 启动后自动弹出面板（用于截图自检/演示）
     [switch]$Demo,       # 截图自检：连"添加日程"对话框也自动打开
+    [switch]$DemoReminder, # 截图自检：弹一条测试提醒窗
     [switch]$KeepOpen    # 调试：失去焦点不自动收起（配合截图用）
 )
 
@@ -388,7 +389,7 @@ function Show-EditDialog([hashtable]$Existing, [DateTime]$DefaultDate) {
         $chkAll.Add_CheckedChanged({ $dtpH.Enabled = -not $chkAll.Checked })
 
         $hint = New-Object System.Windows.Forms.Label
-        $hint.Text = '定时日程到点弹提醒（M3 开发中）；全天只显示在列表。'
+        $hint.Text = '定时日程到点弹提醒；全天只显示在列表。'
         $hint.Location = '14,110'; $hint.AutoSize = $true
         $hint.ForeColor = [System.Drawing.Color]::DimGray
 
@@ -462,6 +463,96 @@ function Get-SelectedEvent {
     return ($script:events | Where-Object { $_.id -eq $id } | Select-Object -First 1)
 }
 
+# ---------- M3：到点提醒 ----------
+$script:reminderForm = $null
+$script:reminderQueue = @()
+
+function Show-NextReminder {
+    Write-Log "Show-NextReminder 进入 form=$($null -ne $script:reminderForm) queue=$($script:reminderQueue.Count)"
+    if ($script:reminderForm -or $script:reminderQueue.Count -eq 0) { return }
+    $ev = $script:reminderQueue[0]
+    $script:reminderQueue = @($script:reminderQueue | Select-Object -Skip 1)
+
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = 'TrayCal 提醒'
+    $f.ClientSize = New-Object System.Drawing.Size(380, 120)
+    $f.FormBorderStyle = 'FixedToolWindow'
+    $f.TopMost = $true
+    $f.ShowInTaskbar = $false
+    $f.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "⏰ $($ev.time)  $($ev.title)"
+    $lbl.Location = New-Object System.Drawing.Point(16, 18)
+    $lbl.AutoSize = $true
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = '知道了'; $btnOk.Location = New-Object System.Drawing.Point(80, 60); $btnOk.Size = New-Object System.Drawing.Size(90, 30)
+    $btnOk.Tag = $ev
+    $btnSnooze = New-Object System.Windows.Forms.Button
+    $btnSnooze.Text = '稍后10分钟'; $btnSnooze.Location = New-Object System.Drawing.Point(190, 60); $btnSnooze.Size = New-Object System.Drawing.Size(110, 30)
+    $btnSnooze.Tag = $ev
+    $f.Controls.AddRange(@($lbl, $btnOk, $btnSnooze))
+
+    $btnOk.Add_Click({
+        param($sender, $e)
+        $ev2 = $sender.Tag
+        $ev2.reminded = $true
+        Save-Events $DataFile $script:events
+        if ($script:panel.Visible) { Refresh-Panel }
+        $script:reminderForm = $null; $sender.Parent.Close()
+        Show-NextReminder
+    })
+    $btnSnooze.Add_Click({
+        param($sender, $e)
+        $ev2 = $sender.Tag
+        $ev2.snoozeUntil = (Get-Date).AddMinutes(10).ToString('yyyy-MM-dd HH:mm:ss')
+        Save-Events $DataFile $script:events
+        $script:reminderForm = $null; $sender.Parent.Close()
+        Show-NextReminder
+    })
+    $f.Add_FormClosed({ $script:reminderForm = $null })
+
+    $script:reminderForm = $f
+    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $f.StartPosition = 'Manual'
+    $f.Location = New-Object System.Drawing.Point(($wa.Right - $f.Width - 16), ($wa.Bottom - $f.Height - 60))
+    [System.Media.SystemSounds]::Exclamation.Play()
+    $f.Show()
+    $f.Activate()
+    Write-Log "提醒窗口已显示 $($f.Location)"
+}
+
+$uiTimer = New-Object System.Windows.Forms.Timer
+$uiTimer.Interval = 20000
+$uiTimer.Add_Tick({
+    try {
+        if ($script:reminderForm) { return }
+        $now = Get-Date
+        if ($script:reminderQueue.Count -eq 0) {
+            $script:reminderQueue = @(foreach ($ev in $script:events) { if (Test-EventDueNow $ev $now) { $ev } })
+        }
+        if ($script:reminderQueue.Count -gt 0) { Show-NextReminder }
+    } catch { Write-Log "提醒定时器异常: $_" }
+})
+$uiTimer.Start()
+
+# ---------- M3：开机自启（启动文件夹快捷方式 → vbs 静默拉起） ----------
+function Get-AutostartLnk { Join-Path ([Environment]::GetFolderPath('Startup')) 'TrayCal.lnk' }
+function Set-Autostart([bool]$Enable) {
+    $lnk = Get-AutostartLnk
+    if ($Enable) {
+        $ws = New-Object -ComObject WScript.Shell
+        $sc = $ws.CreateShortcut($lnk)
+        $sc.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
+        $sc.Arguments = '"' + (Join-Path $AppDir '启动TrayCal.vbs') + '"'
+        $sc.WorkingDirectory = $AppDir
+        $sc.Description = 'TrayCal 日程提醒'
+        $sc.Save()
+    } elseif (Test-Path $lnk) {
+        Remove-Item $lnk -Force
+    }
+}
+
 # ---------- 托盘与消息循环 ----------
 $ni = New-Object System.Windows.Forms.NotifyIcon
 $ni.Icon = New-TrayIcon
@@ -471,9 +562,16 @@ $ni.Visible = $true
 $cm = New-Object System.Windows.Forms.ContextMenuStrip
 $miToggle = $cm.Items.Add('显示/隐藏日历')
 $miOpen   = $cm.Items.Add('打开日程文件')
+$miAuto   = $cm.Items.Add('开机自启')
 $miExit   = $cm.Items.Add('退出')
 $miToggle.Add_Click({ Toggle-Panel })
-$miOpen.Add_Click({ Start-Process $DataFile })
+$miOpen.Add_Click({
+    if (-not (Test-Path $DataFile)) { Save-Events $DataFile $script:events }
+    Start-Process $DataFile
+})
+$miAuto.CheckOnClick = $true
+$miAuto.Checked = Test-Path (Get-AutostartLnk)
+$miAuto.Add_Click({ param($sender, $e) try { Set-Autostart $sender.Checked } catch { Write-Log "设置自启失败: $_" } })
 $miExit.Add_Click({ [System.Windows.Forms.Application]::ExitThread() })
 $ni.ContextMenuStrip = $cm
 
@@ -482,7 +580,7 @@ $ni.Add_MouseClick({
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Toggle-Panel }
 })
 
-Write-Log 'TrayCal M2 启动'
+Write-Log 'TrayCal M3 启动'
 
 if ($Show -or $Demo) {
     $tShow = New-Object System.Windows.Forms.Timer
@@ -495,6 +593,18 @@ if ($Demo) {
     $tDemo.Interval = 1500
     $tDemo.Add_Tick({ $tDemo.Stop(); $tDemo.Dispose(); Show-EditDialog $null $script:selectedDate })
     $tDemo.Start()
+}
+if ($DemoReminder) {
+    $tR = New-Object System.Windows.Forms.Timer
+    $tR.Interval = 900
+    $tR.Add_Tick({
+        $tR.Stop(); $tR.Dispose()
+        $fake = @{ id = 'demo-reminder'; title = '【自检】提醒窗口测试'; date = (Get-Date).ToString('yyyy-MM-dd');
+                   time = (Get-Date).ToString('HH:mm'); reminded = $false; snoozeUntil = $null }
+        $script:reminderQueue = @($fake)
+        Show-NextReminder
+    })
+    $tR.Start()
 }
 
 $ctx = New-Object System.Windows.Forms.ApplicationContext
