@@ -70,6 +70,19 @@ if ($SelfTest) {
         $mvFut = @(Move-EventToDate $mvSrc 'm1' ([DateTime]'2099-01-01'))
         Assert ($mvFut[0].reminded -eq $false) '改期：移到未来日期重置提醒'
         Assert ($mvFut[0].time -eq '10:00') '改期：时间保持不变'
+        $li1 = Get-LunarInfo ([DateTime]'2026-02-17')
+        Assert ($li1.Text -eq '正月') '农历：2026-02-17 为正月初一（春节）'
+        $li2 = Get-LunarInfo ([DateTime]'2026-12-22')
+        Assert ($li2.IsTerm -and ($li2.Text -eq '冬至')) '节气：2026-12-22 冬至'
+        $li3 = Get-LunarInfo ([DateTime]'2026-02-18')
+        Assert ($li3.IsTerm -and ($li3.Text -eq '雨水')) '节气：2026-02-18 雨水（特例修正）'
+        $t26 = Get-SolarTermsForYear 2026
+        Assert (@($t26.Keys).Count -eq 24) '节气：2026 全年 24 个'
+        Assert ($t26['02-04'] -eq '立春') '节气：2026-02-04 立春'
+        $t25 = Get-SolarTermsForYear 2025
+        Assert ($t25['03-20'] -eq '春分') '节气：2025-03-20 春分（核对）'
+        $t27 = Get-SolarTermsForYear 2027
+        Assert ($t27['02-19'] -eq '雨水') '节气：2027-02-19 雨水（核对）'
     } finally { Remove-Item $tmpFile -ErrorAction SilentlyContinue }
     if ($fail -eq 0) { Write-Host 'SelfTest 全部通过' -ForegroundColor Green; $script:testExitCode = 0 }
     else { Write-Host "SelfTest 失败 $fail 项" -ForegroundColor Red; $script:testExitCode = 1 }

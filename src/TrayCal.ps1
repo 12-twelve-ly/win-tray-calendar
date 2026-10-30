@@ -32,6 +32,7 @@ function Write-Log($msg) {
 
 # ---------- 模块加载（lib 与 tests 均相对本文件） ----------
 . (Join-Path $PSScriptRoot 'lib\data.ps1')
+. (Join-Path $PSScriptRoot 'lib\lunar.ps1')
 if ($SelfTest) {
     $script:testExitCode = 0
     . (Join-Path $PSScriptRoot 'tests\SelfTest.ps1')

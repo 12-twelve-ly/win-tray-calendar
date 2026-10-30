@@ -242,7 +242,9 @@ function Refresh-Panel {
         if ($lo -gt $hi) { $t3 = $lo; $lo = $hi; $hi = $t3 }
         $script:selText = '{0}月{1}日~{2}月{3}日 日程' -f $lo.Month, $lo.Day, $hi.Month, $hi.Day
     } else {
-        $script:selText = '{0}年{1}月{2}日 日程' -f $sel.Year, $sel.Month, $sel.Day
+        $lunSel = Get-LunarInfo $sel
+        $lunSuffix = $(if ($lunSel.Text) { ' ' + $lunSel.Text } else { '' })
+        $script:selText = '{0}年{1}月{2}日{3}' -f $sel.Year, $sel.Month, $sel.Day, $lunSuffix
     }
     $script:eventDates = @{}
     foreach ($e2 in $script:events) { $script:eventDates[$e2.date] = $true }
@@ -324,36 +326,47 @@ $calPanel.Add_Paint({
         }
         $dowOff = (([int]$vm.DayOfWeek) + 6) % 7
         $start = $vm.AddDays(-$dowOff)
+        $fontLun = New-Object System.Drawing.Font('Microsoft YaHei UI', 7.5)
+        $lumGray = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(152, 152, 164))
+        $lumTerm = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(0, 120, 215))
         for ($row = 0; $row -lt 6; $row++) {
             for ($col = 0; $col -lt 7; $col++) {
                 $d = $start.AddDays($row * 7 + $col)
                 $rect = New-Object System.Drawing.RectangleF(($col * $cellW), ($headH + $wdH + $row * $cellH), $cellW, $cellH)
                 $cx = $rect.X + $cellW / 2.0
-                $cy = $rect.Y + $cellH / 2.0
+                $numRect = New-Object System.Drawing.RectangleF($rect.X, ($rect.Y + 1), $cellW, 26)
+                $cy = $rect.Y + 14.0
                 if ($script:rangeStart -and $script:rangeEnd) {
                     $lo = $script:rangeStart; $hi = $script:rangeEnd
                     if ($lo -gt $hi) { $t2 = $lo; $lo = $hi; $hi = $t2 }
                     if (($d -ge $lo) -and ($d -le $hi) -and ($d -ne $today)) {
                         $band = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(224, 237, 250))
-                        $g.FillRectangle($band, [single]($rect.X + 4), [single]($rect.Y + 7), [single]($cellW - 8), [single]($cellH - 14))
+                        $g.FillRectangle($band, [single]($rect.X + 4), [single]($rect.Y + 2), [single]($cellW - 8), [single]($cellH - 6))
                         $band.Dispose()
                     }
                 }
                 if ($d -eq $today) {
-                    $g.FillEllipse($blue, [single]($cx - 16), [single]($cy - 16), 32, 32)
-                    $g.DrawString([string]$d.Day, $fontDay, $white, $rect, $sf)
+                    $g.FillEllipse($blue, [single]($cx - 15), [single]($cy - 15), 30, 30)
+                    $g.DrawString([string]$d.Day, $fontDay, $white, $numRect, $sf)
                 } else {
                     if ($d -eq $script:selectedDate) {
-                        $g.DrawEllipse($pen, [single]($cx - 16), [single]($cy - 16), 32, 32)
+                        $g.DrawEllipse($pen, [single]($cx - 15), [single]($cy - 15), 30, 30)
                     }
                     $brush = if ($d.Month -ne $vm.Month) { $gray } else { $dark }
-                    $g.DrawString([string]$d.Day, $fontDay, $brush, $rect, $sf)
+                    $g.DrawString([string]$d.Day, $fontDay, $brush, $numRect, $sf)
+                }
+                $lun = Get-LunarInfo $d
+                if ($lun.Text) {
+                    $lr = New-Object System.Drawing.RectangleF($rect.X, ($rect.Y + 26), $cellW, 13)
+                    $lb = $(if ($lun.IsTerm -and ($d.Month -eq $vm.Month)) { $lumTerm } else { $lumGray })
+                    $g.DrawString($lun.Text, $fontLun, $lb, $lr, $sf)
                 }
                 if ($script:eventDates.ContainsKey($d.ToString('yyyy-MM-dd'))) {
-                    $g.FillEllipse($blue, [single]($cx - 2.5), [single]($rect.Y + $cellH - 8), 5, 5)
+                    $g.FillEllipse($blue, [single]($cx - 2.5), [single]($rect.Y + $cellH - 7), 5, 5)
                 }
             }
         }
+        $fontLun.Dispose(); $lumGray.Dispose(); $lumTerm.Dispose()
     } else {
         # 月/年选择：3 列 × 4 行
         $cw = $W / 3.0
