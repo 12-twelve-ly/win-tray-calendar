@@ -58,6 +58,21 @@ function Clear-StaleEvents($Events, [DateTime]$Now) {
     return $Events
 }
 
+function Move-EventToDate($Events, [string]$Id, [DateTime]$NewDate) {
+    # 改期：日期替换、时间保留，提醒状态按新日期判定
+    $now = Get-Date
+    $list = @($Events | ForEach-Object {
+        if ($_.id -eq $Id) {
+            $_.date = $NewDate.ToString('yyyy-MM-dd')
+            $due = Get-EventDue $_
+            if ($due -and ($due -lt $now)) { $_.reminded = $true } else { $_.reminded = $false }
+            $_.snoozeUntil = $null
+        }
+        $_
+    })
+    return $list
+}
+
 function Get-WeekStart([DateTime]$d) {
     # 周一为一周之首
     $d = $d.Date

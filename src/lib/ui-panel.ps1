@@ -145,7 +145,28 @@ $btnCopyWeek = New-PanelButton '复制本周→下周' $false
 $btnCopyWeek.Size = New-Object System.Drawing.Size(128, 24)
 $btnCopyWeek.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 $btnCopyWeek | Add-Member -NotePropertyName Style -NotePropertyValue 'link' -Force
-$panel.Controls.AddRange(@($btnAdd, $btnEdit, $btnDel, $btnCopyWeek))
+$btnMove = New-PanelButton '移动' $false
+$btnMove.Add_Click({
+    if ($script:moveMode) {
+        $script:moveMode = $false
+        $script:moveEvId = $null
+        $btnMove.Caption = '移动'
+        $btnMove.Invalidate()
+        Refresh-Panel
+        return
+    }
+    $selEv = Get-SelectedEvent
+    if (-not $selEv) {
+        [System.Windows.Forms.MessageBox]::Show('先在列表里选中一条日程。', 'TrayCal', 'OK', 'Information') | Out-Null
+        return
+    }
+    $script:moveMode = $true
+    $script:moveEvId = $selEv.id
+    $btnMove.Caption = '取消'
+    $btnMove.Invalidate()
+    Refresh-Panel
+})
+$panel.Controls.AddRange(@($btnAdd, $btnMove, $btnEdit, $btnDel, $btnCopyWeek))
 
 # 布局与圆角：控件句柄创建后月历真实尺寸才准，弹出时再校准
 $pad = 16
@@ -183,6 +204,8 @@ function Sync-PanelSize {
     $by = ($pad + $h + $rowH + 2 + $lvH + $gap)
     $btnAdd.Size = New-Object System.Drawing.Size(86, $btnH)
     $btnAdd.Location = New-Object System.Drawing.Point($pad, $by)
+    $btnMove.Size = New-Object System.Drawing.Size(72, $btnH)
+    $btnMove.Location = New-Object System.Drawing.Point(($pad + 86 + 10), $by)
     $rightX = ($panel.ClientSize.Width - $pad - 72)
     $editX  = [Math]::Max(($pad + 86 + 8), ($rightX - 8 - 72))
     $btnEdit.Size = New-Object System.Drawing.Size(72, $btnH)
@@ -212,7 +235,9 @@ $panel.Add_Paint({
 # ---------- 面板行为 ----------
 function Refresh-Panel {
     $sel = $script:selectedDate
-    if ($script:rangeStart -and $script:rangeEnd -and ($script:rangeStart -ne $script:rangeEnd)) {
+    if ($script:moveMode) {
+        $script:selText = '移动中：点日历日期'
+    } elseif ($script:rangeStart -and $script:rangeEnd -and ($script:rangeStart -ne $script:rangeEnd)) {
         $lo = $script:rangeStart; $hi = $script:rangeEnd
         if ($lo -gt $hi) { $t3 = $lo; $lo = $hi; $hi = $t3 }
         $script:selText = '{0}月{1}日~{2}月{3}日 日程' -f $lo.Month, $lo.Day, $hi.Month, $hi.Day
@@ -235,6 +260,7 @@ function Refresh-Panel {
     }
     $btnEdit.Enabled = ($lv.SelectedItems.Count -gt 0)
     $btnDel.Enabled = ($lv.SelectedItems.Count -gt 0)
+    $btnMove.Enabled = (($lv.SelectedItems.Count -gt 0) -or $script:moveMode)
 }
 
 function Show-Panel {
@@ -246,7 +272,12 @@ function Show-Panel {
     $panel.Activate()
     $panel.BringToFront()
 }
-function Hide-Panel { $panel.Hide() }
+function Hide-Panel {
+    $script:moveMode = $false
+    $script:moveEvId = $null
+    if ($btnMove) { $btnMove.Caption = '移动'; $btnMove.Invalidate() }
+    $panel.Hide()
+}
 function Toggle-Panel { if ($panel.Visible) { Hide-Panel } else { Show-Panel } }
 
 $panel.Add_Deactivate({
@@ -392,6 +423,18 @@ $calPanel.Add_MouseMove({
 
 $calPanel.Add_MouseUp({
     param($sender, $e)
+    if ($script:moveMode) {
+        $mvD = Get-DateAtPoint $sender $e.X $e.Y
+        if ($mvD) {
+            $mvId = $script:moveEvId
+            $script:moveMode = $false
+            $script:moveEvId = $null
+            $btnMove.Caption = '移动'
+            $btnMove.Invalidate()
+            Invoke-MoveEventToDate $mvId $mvD
+            return
+        }
+    }
     $W = $sender.Width; $H = $sender.Height
     $headH = 34.0
     $mode = $script:calMode
@@ -442,8 +485,25 @@ $calPanel.Add_MouseUp({
     $sender.Invalidate()
 })
 
+# 改期核心：移动模式（先在列表选中日程，再点日历日期）
+function Invoke-MoveEventToDate([string]$evId, [DateTime]$target) {
+    $evTarget = $script:events | Where-Object { $_.id -eq $evId } | Select-Object -First 1
+    if (-not $evTarget) { return }
+    if ($evTarget.date -eq $target.ToString('yyyy-MM-dd')) { return }
+    $script:events = @(Move-EventToDate $script:events $evTarget.id $target)
+    Save-Events $DataFile $script:events
+    if ($target.Month -ne $script:viewMonth.Month -or $target.Year -ne $script:viewMonth.Year) {
+        $script:viewMonth = New-Object DateTime($target.Year, $target.Month, 1)
+    }
+    $script:selectedDate = $target
+    $script:rangeStart = $target
+    $script:rangeEnd = $target
+    Refresh-Panel
+}
+
 # 滚轮切换月份：悬停日历区时把焦点交给面板，滚轮在面板上被处理
-$calPanel.Add_MouseEnter({ $panel.Focus() })
+# 注意：移动模式下不抢焦点，避免打断操作
+$calPanel.Add_MouseEnter({ if (-not $script:moveMode) { $panel.Focus() } })
 $panel.Add_MouseWheel({
     param($sender, $e)
     $pt = $panel.PointToClient([System.Windows.Forms.Cursor]::Position)
@@ -461,5 +521,7 @@ $panel.Add_MouseWheel({
 $lv.Add_SelectedIndexChanged({
     $btnEdit.Enabled = ($lv.SelectedItems.Count -gt 0)
     $btnDel.Enabled = ($lv.SelectedItems.Count -gt 0)
+    $btnMove.Enabled = (($lv.SelectedItems.Count -gt 0) -or $script:moveMode)
 })
+
 

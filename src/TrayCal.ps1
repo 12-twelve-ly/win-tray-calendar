@@ -59,6 +59,8 @@ $script:viewMonth = New-Object DateTime((Get-Date).Year, (Get-Date).Month, 1)
 $script:calMode = 'day'   # day | month | year
 $script:rangeStart = $null
 $script:rangeEnd = $null
+$script:moveMode = $false
+$script:moveEvId = $null
 $script:eventDates = @{}
 $script:suppressHide = $false
 try { New-Item -ItemType Directory -Path $DataDir -ErrorAction SilentlyContinue | Out-Null } catch { }

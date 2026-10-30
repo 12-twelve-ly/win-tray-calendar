@@ -63,6 +63,13 @@ if ($SelfTest) {
         Assert ($be[0].time -eq '09:00') '批量添加：时间写入'
         $be2 = @(New-BatchEvents @('全天事项') ([DateTime]'2026-11-02') ([DateTime]'2026-11-02') $null)
         Assert (($be2.Count -eq 1) -and ($null -eq $be2[0].time)) '批量添加：全天单日'
+        $mvSrc = @(@{ id = 'm1'; title = '改期测试'; date = '2026-10-29'; time = '10:00'; reminded = $false; snoozeUntil = $null; sourceId = $null })
+        $mvPast = @(Move-EventToDate $mvSrc 'm1' ([DateTime]'2020-01-01'))
+        Assert ($mvPast[0].date -eq '2020-01-01') '改期：日期更新'
+        Assert ($mvPast[0].reminded -eq $true) '改期：移到过去日期标记已提醒'
+        $mvFut = @(Move-EventToDate $mvSrc 'm1' ([DateTime]'2099-01-01'))
+        Assert ($mvFut[0].reminded -eq $false) '改期：移到未来日期重置提醒'
+        Assert ($mvFut[0].time -eq '10:00') '改期：时间保持不变'
     } finally { Remove-Item $tmpFile -ErrorAction SilentlyContinue }
     if ($fail -eq 0) { Write-Host 'SelfTest 全部通过' -ForegroundColor Green; $script:testExitCode = 0 }
     else { Write-Host "SelfTest 失败 $fail 项" -ForegroundColor Red; $script:testExitCode = 1 }
