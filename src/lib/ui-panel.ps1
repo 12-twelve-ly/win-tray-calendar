@@ -61,8 +61,8 @@ $panel.StartPosition = 'Manual'
 $panel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
 # 自绘月历（原生 MonthCalendar 尺寸受系统限制，无法填满卡片）
-$script:calW = 336
-$script:calH = 320
+$script:calW = 378
+$script:calH = 430
 $calPanel = New-Object System.Windows.Forms.Panel
 $calPanel.Size = New-Object System.Drawing.Size($script:calW, $script:calH)
 try {
@@ -292,15 +292,15 @@ $calPanel.Add_Paint({
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
     $W = $sender.Width; $H = $sender.Height
-    $headH = 34.0
+    $headH = 38.0
     $vm = $script:viewMonth
     $mode = $script:calMode
     $today = (Get-Date).Date
     $sf = New-Object System.Drawing.StringFormat
     $sf.Alignment = [System.Drawing.StringAlignment]::Center
     $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $fontTitle = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
-    $fontDay   = New-Object System.Drawing.Font('Segoe UI', 11)
+    $fontTitle = New-Object System.Drawing.Font('Microsoft YaHei UI', 13, [System.Drawing.FontStyle]::Bold)
+    $fontDay   = New-Object System.Drawing.Font('Microsoft YaHei UI', 12)
     $fontWd    = New-Object System.Drawing.Font('Segoe UI', 9)
     $gray  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(165, 165, 175))
     $dark  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(45, 45, 55))
@@ -326,16 +326,16 @@ $calPanel.Add_Paint({
         }
         $dowOff = (([int]$vm.DayOfWeek) + 6) % 7
         $start = $vm.AddDays(-$dowOff)
-        $fontLun = New-Object System.Drawing.Font('Microsoft YaHei UI', 7.5)
-        $lumGray = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(152, 152, 164))
-        $lumTerm = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(0, 120, 215))
+        $fontLun = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+        $lumGray = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(126, 126, 140))
+        $lumTerm = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(66, 114, 176))
         for ($row = 0; $row -lt 6; $row++) {
             for ($col = 0; $col -lt 7; $col++) {
                 $d = $start.AddDays($row * 7 + $col)
                 $rect = New-Object System.Drawing.RectangleF(($col * $cellW), ($headH + $wdH + $row * $cellH), $cellW, $cellH)
                 $cx = $rect.X + $cellW / 2.0
-                $numRect = New-Object System.Drawing.RectangleF($rect.X, ($rect.Y + 1), $cellW, 26)
-                $cy = $rect.Y + 14.0
+                $numRect = New-Object System.Drawing.RectangleF($rect.X, ($rect.Y + 3), $cellW, 30)
+                $cy = $rect.Y + 18.0
                 if ($script:rangeStart -and $script:rangeEnd) {
                     $lo = $script:rangeStart; $hi = $script:rangeEnd
                     if ($lo -gt $hi) { $t2 = $lo; $lo = $hi; $hi = $t2 }
@@ -346,23 +346,23 @@ $calPanel.Add_Paint({
                     }
                 }
                 if ($d -eq $today) {
-                    $g.FillEllipse($blue, [single]($cx - 15), [single]($cy - 15), 30, 30)
+                    $g.FillEllipse($blue, [single]($cx - 16), [single]($cy - 16), 32, 32)
                     $g.DrawString([string]$d.Day, $fontDay, $white, $numRect, $sf)
                 } else {
                     if ($d -eq $script:selectedDate) {
-                        $g.DrawEllipse($pen, [single]($cx - 15), [single]($cy - 15), 30, 30)
+                        $g.DrawEllipse($pen, [single]($cx - 16), [single]($cy - 16), 32, 32)
                     }
                     $brush = if ($d.Month -ne $vm.Month) { $gray } else { $dark }
                     $g.DrawString([string]$d.Day, $fontDay, $brush, $numRect, $sf)
                 }
                 $lun = Get-LunarInfo $d
                 if ($lun.Text) {
-                    $lr = New-Object System.Drawing.RectangleF($rect.X, ($rect.Y + 26), $cellW, 13)
+                    $lr = New-Object System.Drawing.RectangleF($rect.X, ($rect.Y + 36), $cellW, 17)
                     $lb = $(if ($lun.IsTerm -and ($d.Month -eq $vm.Month)) { $lumTerm } else { $lumGray })
                     $g.DrawString($lun.Text, $fontLun, $lb, $lr, $sf)
                 }
                 if ($script:eventDates.ContainsKey($d.ToString('yyyy-MM-dd'))) {
-                    $g.FillEllipse($blue, [single]($cx - 2.5), [single]($rect.Y + $cellH - 7), 5, 5)
+                    $g.FillEllipse($blue, [single]($cx - 2.2), [single]($rect.Y + $cellH - 6.5), 4.5, 4.5)
                 }
             }
         }
@@ -400,7 +400,7 @@ $calPanel.Add_Paint({
 })
 
 function Get-DateAtPoint($sender, [int]$x, [int]$y) {
-    $headH = 34.0; $wdH = 24.0
+    $headH = 38.0; $wdH = 24.0
     if ($script:calMode -ne 'day') { return $null }
     if ($y -lt ($headH + $wdH)) { return $null }
     $cellW = $sender.Width / 7.0
@@ -449,7 +449,7 @@ $calPanel.Add_MouseUp({
         }
     }
     $W = $sender.Width; $H = $sender.Height
-    $headH = 34.0
+    $headH = 38.0
     $mode = $script:calMode
     if ($e.Y -lt $headH) {
         if ($e.X -lt 40) {
